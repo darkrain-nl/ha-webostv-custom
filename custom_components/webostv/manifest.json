@@ -1,7 +1,7 @@
 {
   "domain": "webostv",
   "name": "LG webOS TV",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "codeowners": ["@thecode"],
   "config_flow": true,
   "documentation": "https://www.home-assistant.io/integrations/webostv",

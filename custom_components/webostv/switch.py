@@ -79,7 +79,7 @@ class LgWebOSScreenSwitchEntity(SwitchEntity):
         )
         self._update_states()
 
-    def async_handle_state_update(self, tv_state: WebOsTvState) -> None:
+    async def async_handle_state_update(self, tv_state: WebOsTvState) -> None:
         """Update state from WebOsClient."""
         self._update_states()
         self.async_write_ha_state()
