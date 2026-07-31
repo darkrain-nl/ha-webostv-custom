@@ -1,42 +1,35 @@
 {
   "config": {
-    "abort": {
-      "already_configured": "[%key:common::config_flow::abort::already_configured_device%]",
-      "already_in_progress": "[%key:common::config_flow::abort::already_in_progress%]",
-      "reauth_successful": "[%key:common::config_flow::abort::reauth_successful%]",
-      "reconfigure_successful": "[%key:common::config_flow::abort::reconfigure_successful%]",
-      "wrong_device": "The configured device is not the same found at this hostname or IP address."
-    },
-    "error": {
-      "cannot_connect": "Failed to connect, please turn on your TV and try again.",
-      "error_pairing": "Pairing failed, make sure to accept the pairing request on the TV and try again."
-    },
     "flow_title": "{name}",
     "step": {
-      "pairing": {
-        "description": "Select **Submit** and accept the pairing request on your TV.\n\n![Image](/static/images/config_webos.png)",
-        "title": "LG webOS TV pairing"
-      },
-      "reauth_confirm": {
-        "description": "[%key:component::webostv::config::step::pairing::description%]",
-        "title": "[%key:component::webostv::config::step::pairing::title%]"
-      },
-      "reconfigure": {
+      "user": {
+        "description": "Please turn on your TV and fill in the following information",
         "data": {
-          "host": "[%key:common::config_flow::data::host%]"
-        },
-        "data_description": {
-          "host": "[%key:component::webostv::config::step::user::data_description::host%]"
+          "host": "Host"
         }
       },
-      "user": {
+      "pair": {
+        "description": "Click submit and accept the pairing prompt on your TV.",
+        "title": "LG webOS TV Pairing"
+      }
+    },
+    "error": {
+      "cannot_connect": "Failed to connect, please turn on your TV or check IP address.",
+      "error_pairing": "Pairing request failed, make sure to accept the pairing request on your TV."
+    },
+    "abort": {
+      "already_configured": "Device is already configured",
+      "already_in_progress": "Configuration flow is already in progress",
+      "reauth_successful": "Re-authentication was successful"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
         "data": {
-          "host": "[%key:common::config_flow::data::host%]"
+          "sources": "Sources list"
         },
-        "data_description": {
-          "host": "Hostname or IP address of your LG webOS TV."
-        },
-        "description": "Turn on the TV, fill the host field and select **Submit**"
+        "description": "Select Enabled Sources"
       }
     }
   },
@@ -54,106 +47,67 @@
   },
   "exceptions": {
     "auth_failed": {
-      "message": "Pairing failed, make sure to accept the pairing request on your TV."
+      "message": "Pairing for {device} failed, make sure to accept the pairing request on your TV."
     },
     "communication_error": {
       "message": "Communication error while calling {func} for device {name}: {error}"
     },
-    "device_config_entry_not_loaded": {
-      "message": "The LG webOS TV integration for device {device_id} is not loaded."
+    "notify_communication_error": {
+      "message": "Communication error while calling notify for device {name}: {error}"
     },
-    "device_not_valid": {
-      "message": "Device {device_id} is not a valid LG webOS TV device."
+    "notify_icon_not_found": {
+      "message": "Icon {icon_path} for device {name} was not found."
+    },
+    "notify_device_off": {
+      "message": "Error sending notification to device {name}: Device is off."
     },
     "device_off": {
-      "message": "Error calling {func} for device {name}: Device is off and cannot be controlled."
+      "message": "Error calling {func} for device {name}: Device is off and can not be controlled."
+    },
+    "device_unavailable": {
+      "message": "Device {device} is unavailable"
     },
     "invalid_entity_id": {
       "message": "Entity {entity_id} is not a valid webOS TV entity."
     },
-    "notify_communication_error": {
-      "message": "Communication error while sending notification to device {name}: {error}"
-    },
-    "notify_device_off": {
-      "message": "Error sending notification to device {name}: Device is off and cannot be controlled."
-    },
-    "notify_icon_not_found": {
-      "message": "Icon {icon_path} not found when sending notification for device {name}"
-    },
     "source_not_found": {
-      "message": "Source {source} not found in the sources list for {name}."
-    },
-    "unhandled_trigger_type": {
-      "message": "Unhandled trigger type: {trigger_type}"
-    },
-    "unknown_trigger_platform": {
-      "message": "Unknown trigger platform: {platform}"
-    }
-  },
-  "options": {
-    "error": {
-      "cannot_connect": "[%key:component::webostv::config::error::cannot_connect%]",
-      "error_pairing": "[%key:component::webostv::config::error::error_pairing%]"
-    },
-    "step": {
-      "init": {
-        "data": {
-          "sources": "Sources list"
-        },
-        "data_description": {
-          "sources": "List of sources to enable"
-        },
-        "description": "Select enabled sources",
-        "title": "Options for LG webOS TV"
-      }
+      "message": "Source {source} not found for {name}."
     }
   },
   "services": {
     "button": {
-      "description": "Sends a button press command.",
+      "name": "Button",
+      "description": "Sends a button press command to the LG webOS TV.",
       "fields": {
         "button": {
-          "description": "Name of the button to press.  Known possible values are LEFT, RIGHT, DOWN, UP, HOME, MENU, BACK, ENTER, DASH, INFO, ASTERISK, CC, EXIT, MUTE, RED, GREEN, BLUE, YELLOW, VOLUMEUP, VOLUMEDOWN, CHANNELUP, CHANNELDOWN, PLAY, PAUSE, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9.",
-          "name": "Button"
-        },
-        "entity_id": {
-          "description": "Name(s) of the webOS TV entities where to run the API method.",
-          "name": "Entity"
+          "name": "Button",
+          "description": "Name of the button to press."
         }
-      },
-      "name": "Button"
+      }
     },
     "command": {
-      "description": "Sends a command.",
+      "name": "Command",
+      "description": "Sends an endpoint command to the LG webOS TV.",
       "fields": {
         "command": {
-          "description": "Endpoint of the command.",
-          "name": "Command"
-        },
-        "entity_id": {
-          "description": "[%key:component::webostv::services::button::fields::entity_id::description%]",
-          "name": "Entity"
+          "name": "Command",
+          "description": "Endpoint command."
         },
         "payload": {
-          "description": "An optional payload to provide to the endpoint in the format of key value pairs.",
-          "name": "Payload"
+          "name": "Payload",
+          "description": "Optional payload to send with endpoint command."
         }
-      },
-      "name": "Command"
+      }
     },
     "select_sound_output": {
-      "description": "Sends the TV the command to change sound output.",
+      "name": "Select sound output",
+      "description": "Sends LG webOS TV the command to change sound output.",
       "fields": {
-        "entity_id": {
-          "description": "Name(s) of the webOS TV entities to change sound output on.",
-          "name": "Entity"
-        },
         "sound_output": {
-          "description": "Name of the sound output to switch to.",
-          "name": "Sound output"
+          "name": "Sound output",
+          "description": "Name of the sound output."
         }
-      },
-      "name": "Select sound output"
+      }
     }
   }
 }
