@@ -4,8 +4,6 @@ from collections.abc import Callable, Coroutine
 from functools import wraps
 from typing import Any, Concatenate, cast, override
 
-from aiowebostv import WebOsTvCommandError
-
 from homeassistant.components.switch import SwitchEntity
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
@@ -13,7 +11,7 @@ from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import DOMAIN
+from .const import DOMAIN, WEBOSTV_EXCEPTIONS
 from .coordinator import WebOsTvConfigEntry, WebOsTvDataUpdateCoordinator
 
 PARALLEL_UPDATES = 0
@@ -38,9 +36,18 @@ def cmd[_R, **_P](
         self: LgWebOSScreenSwitchEntity, *args: _P.args, **kwargs: _P.kwargs
     ) -> _R:
         """Wrap all command methods."""
+        if not self.coordinator.client.tv_state.is_on:
+            raise HomeAssistantError(
+                translation_domain=DOMAIN,
+                translation_key="device_off",
+                translation_placeholders={
+                    "func": func.__name__,
+                    "name": str(self._entry.title),
+                },
+            )
         try:
             return await func(self, *args, **kwargs)
-        except WebOsTvCommandError as exc:
+        except WEBOSTV_EXCEPTIONS as exc:
             raise HomeAssistantError(
                 translation_domain=DOMAIN,
                 translation_key="communication_error",
@@ -74,13 +81,13 @@ class LgWebOSScreenSwitchEntity(
         )
 
     @property
-    def available(self) -> bool:
-        """Return if entity is available."""
-        return super().available and self.coordinator.client.tv_state.is_on
+    @override
+    def is_on(self) -> bool:
+        """Return true if screen is on.
 
-    @property
-    def is_on(self) -> bool | None:
-        """Return true if screen is on."""
+        The library reports the screen as off whenever the TV is off, so this
+        stays accurate while the TV is unreachable but the entity is available.
+        """
         return self.coordinator.client.tv_state.is_screen_on
 
     @cmd
