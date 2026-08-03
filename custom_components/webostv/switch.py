@@ -45,10 +45,10 @@ class LgWebOSScreenSwitchEntity(WebOsTvEntity, SwitchEntity):
     @override
     async def async_turn_on(self, **kwargs: Any) -> None:
         """Turn the screen on."""
-        await self._client.request("com.webos.service.tvpower/power/turnOnScreen")
+        await self._client.set_screen_state(True)
 
     @cmd
     @override
     async def async_turn_off(self, **kwargs: Any) -> None:
         """Turn the screen off."""
-        await self._client.request("com.webos.service.tvpower/power/turnOffScreen")
+        await self._client.set_screen_state(False)
