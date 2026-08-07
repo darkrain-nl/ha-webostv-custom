@@ -12,6 +12,7 @@ A custom integration override for Home Assistant that adds native **Screen Power
 - **Native Screen Switch Entity**: Provides a dedicated switch (`switch.<tv_name>_screen`) in Home Assistant to turn the TV display on or off while keeping TV audio and background system running.
 - **Real-Time State Tracking**: Listens directly to WebSocket power state notifications from the TV (`is_screen_on`) without requiring external polling automations.
 - **Native WebOS Commands**: Executes `com.webos.service.tvpower/power/turnOffScreen` and `turnOnScreen`.
+- **Modern Turn On Trigger**: The `webostv.turn_on` trigger is a first-class UI trigger — it shows up in the automation editor as *"TV is requested to turn on"* with a target selector, so it can be targeted by entity, device, area, floor or label instead of YAML-only editing.
 
 ---
 
@@ -24,7 +25,7 @@ A custom integration override for Home Assistant that adds native **Screen Power
    https://github.com/darkrain-nl/ha-webostv-custom
    ```
 4. Category: **Integration** -> Click **Add**.
-5. Find **LG webOS TV Custom Screen Control**, click **Download**, and select the latest release (`v1.0.2`).
+5. Find **LG webOS TV Custom Screen Control**, click **Download**, and select the latest release (`v1.0.9`).
 6. **Restart Home Assistant**.
 
 ---
@@ -46,6 +47,27 @@ action:
     target:
       entity_id: switch.lg_webos_tv_screen
 ```
+
+### Turn On Trigger
+
+Fires when Home Assistant is asked to turn the TV on (for example by
+`media_player.turn_on`), so the automation can do the actual waking — Wake on LAN,
+a smart plug, an IR blaster.
+
+```yaml
+triggers:
+  - trigger: webostv.turn_on
+    target:
+      entity_id: media_player.lg_webos_tv
+actions:
+  - action: wake_on_lan.send_magic_packet
+    data:
+      mac: aa:bb:cc:dd:ee:ff
+```
+
+`target` also accepts `device_id`, `area_id`, `floor_id` and `label_id`. Existing
+automations that use the old top-level `entity_id` / `device_id` fields keep working —
+they are folded into the target during config validation.
 
 ---
 
