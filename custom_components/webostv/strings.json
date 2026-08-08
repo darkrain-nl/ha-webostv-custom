@@ -91,16 +91,16 @@
     }
   },
   "issues": {
-    "deprecated_turn_on_trigger": {
+    "deprecated_turn_on_trigger_target": {
       "fix_flow": {
         "step": {
           "confirm": {
-            "description": "An automation or script uses the `webostv.turn_on` trigger, which has been replaced by the `webostv.turn_on_requested` trigger. The old trigger still works for now, but support for it will be removed in a future release.\n\nOpen each affected automation or script in the editor, replace the trigger with **TV is requested to turn on**, and select your TV as its target. Alternatively, edit your configuration files (for example `automations.yaml`) directly, rename the trigger to `webostv.turn_on_requested` and move the `entity_id` or `device_id` option into a `target` block.\n\nWhen this is done, select **Submit**.",
-            "title": "Deprecated LG webOS TV turn on trigger"
+            "description": "An automation or template entity uses the LG webOS TV turn on trigger with the `entity_id` or `device_id` option. Those options have been replaced by a target. They still work for now, but support for them will be removed in a future release.\n\nOpen each affected automation in the editor, select your TV as the target of the trigger, and save it again. Alternatively, edit your configuration files (for example `automations.yaml`) directly and move the `entity_id` or `device_id` option into a `target` block.\n\nIf this issue reappears after a restart, the old option is still present. Edit your configuration files directly and remove the `entity_id` or `device_id` option from the trigger.\n\nWhen this is done, select **Submit**.",
+            "title": "Deprecated LG webOS TV turn on trigger configuration"
           }
         }
       },
-      "title": "Deprecated LG webOS TV turn on trigger"
+      "title": "Deprecated LG webOS TV turn on trigger configuration"
     }
   },
   "options": {
@@ -170,7 +170,7 @@
     }
   },
   "triggers": {
-    "turn_on_requested": {
+    "turn_on": {
       "description": "Triggers when one or more LG webOS TVs are requested to turn on.",
       "name": "TV is requested to turn on"
     }

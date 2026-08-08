@@ -1,4 +1,4 @@
-turn_on_requested:
+turn_on:
   target:
     entity:
       - domain: media_player
