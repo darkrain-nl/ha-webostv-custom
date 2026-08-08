@@ -12,7 +12,7 @@ A custom integration override for Home Assistant that adds native **Screen Power
 - **Native Screen Switch Entity**: Provides a dedicated switch (`switch.<tv_name>_screen`) in Home Assistant to turn the TV display on or off while keeping TV audio and background system running.
 - **Real-Time State Tracking**: Listens directly to WebSocket power state notifications from the TV (`is_screen_on`) without requiring external polling automations.
 - **Native WebOS Commands**: Executes `com.webos.service.tvpower/power/turnOffScreen` and `turnOnScreen`.
-- **Modern Turn On Trigger**: The `webostv.turn_on` trigger is a first-class UI trigger — it shows up in the automation editor as *"TV is requested to turn on"* with entity and device pickers, instead of "Unknown trigger" with YAML-only editing.
+- **Modern Turn On Trigger**: `webostv.turn_on_requested` is a first-class UI trigger — it shows up in the automation editor as *"TV is requested to turn on"* with a target selector, so it can be targeted by entity, device, area, floor or label instead of YAML-only editing. The original `webostv.turn_on` trigger keeps working alongside it.
 
 ---
 
@@ -25,7 +25,7 @@ A custom integration override for Home Assistant that adds native **Screen Power
    https://github.com/darkrain-nl/ha-webostv-custom
    ```
 4. Category: **Integration** -> Click **Add**.
-5. Find **LG webOS TV Custom Screen Control**, click **Download**, and select the latest release (`v1.0.16`).
+5. Find **LG webOS TV Custom Screen Control**, click **Download**, and select the latest release (`v1.0.17`).
 6. **Restart Home Assistant**.
 
 ---
@@ -56,8 +56,8 @@ a smart plug, an IR blaster.
 
 ```yaml
 triggers:
-  - trigger: webostv.turn_on
-    options:
+  - trigger: webostv.turn_on_requested
+    target:
       entity_id: media_player.lg_webos_tv
 actions:
   - action: wake_on_lan.send_magic_packet
@@ -65,9 +65,12 @@ actions:
       mac: aa:bb:cc:dd:ee:ff
 ```
 
-The TVs are selected with `entity_id`, `device_id`, or both — the same options the
-trigger always took. Existing automations that put them at the top level instead of
-under `options` keep working unchanged; they are moved into `options` during validation.
+`target` also accepts `device_id`, `area_id`, `floor_id` and `label_id`.
+
+The older `webostv.turn_on` trigger, which takes a top-level `entity_id` or `device_id`,
+keeps working indefinitely — it is not deprecated. It stays out of the automation
+editor's trigger list, so the editor never renders or rewrites a stored config that
+uses it, the same way `sun` and `calendar` handle their legacy triggers.
 
 ---
 
