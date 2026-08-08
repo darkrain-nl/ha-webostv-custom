@@ -10,6 +10,7 @@ from homeassistant.const import (
     ATTR_ENTITY_ID,
     CONF_DEVICE_ID,
     CONF_DOMAIN,
+    CONF_OPTIONS,
     CONF_PLATFORM,
     CONF_TARGET,
     CONF_TYPE,
@@ -21,6 +22,7 @@ from homeassistant.helpers import (
     entity_registry as er,
     issue_registry as ir,
 )
+from homeassistant.helpers.automation import move_top_level_schema_fields_to_options
 from homeassistant.helpers.target import TargetEntityChangeTracker, TargetSelection
 from homeassistant.helpers.trigger import (
     PluggableAction,
@@ -37,9 +39,25 @@ from ..helpers import async_get_device_entry_by_device_id
 # Platform type should be <DOMAIN>.<SUBMODULE_NAME>
 PLATFORM_TYPE = f"{DOMAIN}.{__name__.rsplit('.', maxsplit=1)[-1]}"
 
-DEPRECATED_TARGET_ISSUE_ID = "deprecated_turn_on_trigger_target"
+DEPRECATED_TRIGGER_ISSUE_ID = "deprecated_turn_on_trigger"
 
 _TRIGGER_SCHEMA = vol.Schema({vol.Required(CONF_TARGET): cv.TARGET_FIELDS})
+
+# The legacy trigger selected devices with top-level entity_id and device_id options,
+# which happen to be target fields, so they are reused as the target as-is.
+_LEGACY_OPTIONS_SCHEMA_DICT: dict[vol.Marker, Any] = {
+    vol.Optional(ATTR_DEVICE_ID): vol.All(cv.ensure_list, [cv.string]),
+    vol.Optional(ATTR_ENTITY_ID): cv.entity_ids,
+}
+
+_LEGACY_TRIGGER_SCHEMA = vol.Schema(
+    {
+        vol.Required(CONF_OPTIONS): vol.All(
+            _LEGACY_OPTIONS_SCHEMA_DICT,
+            cv.has_at_least_one_key(ATTR_ENTITY_ID, ATTR_DEVICE_ID),
+        )
+    }
+)
 
 
 def async_get_turn_on_trigger(device_id: str) -> dict[str, str]:
@@ -141,35 +159,30 @@ class _TurnOnTargetTracker(TargetEntityChangeTracker):
         self._device_ids = set()
 
 
-class TurnOnTrigger(Trigger):
-    """LG webOS TV turn on trigger."""
+class _TurnOnTriggerBase(Trigger):
+    """Shared behavior of the LG webOS TV turn on triggers."""
 
-    @classmethod
+    _target: dict[str, Any]
+
     @override
-    async def async_validate_complete_config(
-        cls, hass: HomeAssistant, complete_config: ConfigType
-    ) -> ConfigType:
-        """Validate complete config, folding the legacy top-level fields into the target.
-
-        A config edited in the UI can carry both the legacy top-level fields and a
-        target, so the two are merged instead of one shape taking precedence.
-        """
-        if legacy_keys := {ATTR_ENTITY_ID, ATTR_DEVICE_ID} & complete_config.keys():
-            ir.async_create_issue(
-                hass,
-                DOMAIN,
-                DEPRECATED_TARGET_ISSUE_ID,
-                breaks_in_ha_version="2027.3",
-                is_fixable=True,
-                severity=ir.IssueSeverity.WARNING,
-                translation_key=DEPRECATED_TARGET_ISSUE_ID,
+    async def async_attach_runner(
+        self,
+        run_action: TriggerActionRunner,
+        did_not_trigger: TriggerNotTriggeredReporter | None = None,
+    ) -> CALLBACK_TYPE:
+        """Attach a trigger."""
+        target_selection = TargetSelection(self._target)
+        if not target_selection.has_any_target:
+            raise HomeAssistantError(
+                translation_domain=DOMAIN, translation_key="trigger_without_target"
             )
-            complete_config = complete_config.copy()
-            target = dict(complete_config.get(CONF_TARGET) or {})
-            for key in legacy_keys:
-                target.setdefault(key, complete_config.pop(key))
-            complete_config[CONF_TARGET] = target
-        return await super().async_validate_complete_config(hass, complete_config)
+
+        tracker = _TurnOnTargetTracker(self._hass, target_selection, run_action)
+        return await tracker.async_setup()
+
+
+class TurnOnTrigger(_TurnOnTriggerBase):
+    """LG webOS TV turn on trigger."""
 
     @classmethod
     @override
@@ -187,18 +200,47 @@ class TurnOnTrigger(Trigger):
             assert config.target is not None
         self._target = config.target
 
-    @override
-    async def async_attach_runner(
-        self,
-        run_action: TriggerActionRunner,
-        did_not_trigger: TriggerNotTriggeredReporter | None = None,
-    ) -> CALLBACK_TYPE:
-        """Attach a trigger."""
-        target_selection = TargetSelection(self._target)
-        if not target_selection.has_any_target:
-            raise HomeAssistantError(
-                translation_domain=DOMAIN, translation_key="trigger_without_target"
-            )
 
-        tracker = _TurnOnTargetTracker(self._hass, target_selection, run_action)
-        return await tracker.async_setup()
+class LegacyTurnOnTrigger(_TurnOnTriggerBase):
+    """Backwards compatible trigger for the legacy `webostv.turn_on` config.
+
+    This trigger is deliberately absent from `triggers.yaml`, so the automation editor
+    keeps treating it as unsupported rather than rendering a stored config that uses the
+    legacy options against a target selector.
+    """
+
+    @classmethod
+    @override
+    async def async_validate_complete_config(
+        cls, hass: HomeAssistant, complete_config: ConfigType
+    ) -> ConfigType:
+        """Validate complete config, moving the legacy top-level fields to options."""
+        ir.async_create_issue(
+            hass,
+            DOMAIN,
+            DEPRECATED_TRIGGER_ISSUE_ID,
+            breaks_in_ha_version="2027.3",
+            is_fixable=True,
+            severity=ir.IssueSeverity.WARNING,
+            translation_key=DEPRECATED_TRIGGER_ISSUE_ID,
+        )
+        complete_config = move_top_level_schema_fields_to_options(
+            complete_config, _LEGACY_OPTIONS_SCHEMA_DICT
+        )
+        return await super().async_validate_complete_config(hass, complete_config)
+
+    @classmethod
+    @override
+    async def async_validate_config(
+        cls, hass: HomeAssistant, config: ConfigType
+    ) -> ConfigType:
+        """Validate config."""
+        return cast(ConfigType, _LEGACY_TRIGGER_SCHEMA(config))
+
+    def __init__(self, hass: HomeAssistant, config: TriggerConfig) -> None:
+        """Initialize trigger."""
+        super().__init__(hass, config)
+
+        if TYPE_CHECKING:
+            assert config.options is not None
+        self._target = config.options

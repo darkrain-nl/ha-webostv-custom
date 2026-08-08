@@ -18,7 +18,7 @@
     }
   },
   "triggers": {
-    "turn_on": {
+    "turn_on_requested": {
       "trigger": "mdi:television-play"
     }
   }
