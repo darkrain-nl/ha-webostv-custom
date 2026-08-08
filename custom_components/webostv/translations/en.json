@@ -71,6 +71,9 @@
         "device_unavailable": {
             "message": "Device {device} is unavailable"
         },
+        "invalid_entity_id": {
+            "message": "Entity {entity_id} is not a valid webOS TV entity."
+        },
         "notify_communication_error": {
             "message": "Communication error while sending notification to device {name}: {error}"
         },

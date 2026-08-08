@@ -17,7 +17,11 @@ from homeassistant.const import (
 )
 from homeassistant.core import CALLBACK_TYPE, Context, HomeAssistant, callback
 from homeassistant.exceptions import HomeAssistantError
-from homeassistant.helpers import config_validation as cv, entity_registry as er
+from homeassistant.helpers import (
+    config_validation as cv,
+    device_registry as dr,
+    entity_registry as er,
+)
 from homeassistant.helpers.automation import move_top_level_schema_fields_to_options
 from homeassistant.helpers.target import TargetEntityChangeTracker, TargetSelection
 from homeassistant.helpers.trigger import (
@@ -30,7 +34,10 @@ from homeassistant.helpers.trigger import (
 from homeassistant.helpers.typing import ConfigType
 
 from ..const import DOMAIN
-from ..helpers import async_get_device_entry_by_device_id
+from ..helpers import (
+    async_get_device_entry_by_device_id,
+    async_get_device_id_from_entity_id,
+)
 
 # Platform type should be <DOMAIN>.<SUBMODULE_NAME>
 PLATFORM_TYPE = f"{DOMAIN}.{__name__.rsplit('.', maxsplit=1)[-1]}"
@@ -43,8 +50,7 @@ _TRIGGER_SCHEMA = vol.Schema(
     }
 )
 
-# The legacy trigger selected devices with top-level entity_id and device_id options,
-# which happen to be target fields, so they are reused as the target as-is.
+# The legacy trigger selected devices with top-level entity_id and device_id options
 _LEGACY_OPTIONS_SCHEMA_DICT: dict[vol.Marker, Any] = {
     vol.Optional(ATTR_DEVICE_ID): vol.All(cv.ensure_list, [cv.string]),
     vol.Optional(ATTR_ENTITY_ID): cv.entity_ids,
@@ -78,6 +84,32 @@ def async_get_turn_on_description(hass: HomeAssistant, device_id: str) -> str:
     return f"webostv turn on trigger for {device.name_by_user or device.name}"
 
 
+@callback
+def _async_attach_turn_on_actions(
+    hass: HomeAssistant, device_ids: set[str], run_action: TriggerActionRunner
+) -> list[CALLBACK_TYPE]:
+    """Attach the turn on action for each of the given devices."""
+
+    @callback
+    def run_turn_on_action(
+        description: str,
+        variables: dict[str, Any],
+        context: Context | None = None,
+    ) -> None:
+        """Run the trigger action."""
+        run_action(variables, description, context)
+
+    return [
+        PluggableAction.async_attach_trigger(
+            hass,
+            async_get_turn_on_trigger(device_id),
+            partial(run_turn_on_action, async_get_turn_on_description(hass, device_id)),
+            {ATTR_DEVICE_ID: device_id},
+        )
+        for device_id in device_ids
+    ]
+
+
 class _TurnOnTargetTracker(TargetEntityChangeTracker):
     """Attach turn on actions to the webOS TV devices selected by a target."""
 
@@ -100,6 +132,7 @@ class _TurnOnTargetTracker(TargetEntityChangeTracker):
             }
 
         super().__init__(hass, target_selection, entity_filter)
+        self._selection = target_selection
         self._run_action = run_action
         self._device_ids: set[str] = set()
         self._unsubs: list[CALLBACK_TYPE] = []
@@ -109,40 +142,31 @@ class _TurnOnTargetTracker(TargetEntityChangeTracker):
     def _handle_entities_update(self, tracked_entities: set[str]) -> None:
         """Re-attach the turn on actions when the tracked devices change."""
         ent_reg = er.async_get(self._hass)
-        device_ids = {
-            device_id
+        dev_reg = dr.async_get(self._hass)
+        # Directly targeted devices are used as-is, because resolving them through their
+        # entities would drop a device whose webOS TV entity is hidden. A device that no
+        # longer exists is skipped, like an entity that is not a webOS TV entity.
+        device_ids: set[str] = set()
+        for device_id in self._selection.device_ids:
+            if device_id in dev_reg.devices:
+                device_ids.add(device_id)
+            # A pre-migration composite id is not a device; it resolves to its splits
+            elif splits := dev_reg.async_get_devices_for_composite_device_id(device_id):
+                device_ids.update(device.id for device in splits)
+        device_ids.update(
+            entity_device_id
             for entity_id in tracked_entities
             if (entry := ent_reg.async_get(entity_id))
-            and (device_id := entry.device_id)
-        }
+            and (entity_device_id := entry.device_id)
+        )
         if device_ids == self._device_ids:
             return
 
         self._detach_actions()
         self._device_ids = device_ids
-
-        for device_id in device_ids:
-            self._unsubs.append(
-                PluggableAction.async_attach_trigger(
-                    self._hass,
-                    async_get_turn_on_trigger(device_id),
-                    partial(
-                        self._run_turn_on_action,
-                        async_get_turn_on_description(self._hass, device_id),
-                    ),
-                    {ATTR_DEVICE_ID: device_id},
-                )
-            )
-
-    @callback
-    def _run_turn_on_action(
-        self,
-        description: str,
-        variables: dict[str, Any],
-        context: Context | None = None,
-    ) -> None:
-        """Run the trigger action."""
-        self._run_action(variables, description, context)
+        self._unsubs = _async_attach_turn_on_actions(
+            self._hass, device_ids, self._run_action
+        )
 
     @callback
     def _detach_actions(self) -> None:
@@ -159,10 +183,26 @@ class _TurnOnTargetTracker(TargetEntityChangeTracker):
         self._device_ids = set()
 
 
-class _TurnOnTriggerBase(Trigger):
-    """Shared behavior of the LG webOS TV turn on triggers."""
+class TurnOnTrigger(Trigger):
+    """LG webOS TV turn on trigger."""
 
     _target: dict[str, Any]
+
+    @classmethod
+    @override
+    async def async_validate_config(
+        cls, hass: HomeAssistant, config: ConfigType
+    ) -> ConfigType:
+        """Validate config."""
+        return cast(ConfigType, _TRIGGER_SCHEMA(config))
+
+    def __init__(self, hass: HomeAssistant, config: TriggerConfig) -> None:
+        """Initialize trigger."""
+        super().__init__(hass, config)
+
+        if TYPE_CHECKING:
+            assert config.target is not None
+        self._target = config.target
 
     @override
     async def async_attach_runner(
@@ -181,33 +221,16 @@ class _TurnOnTriggerBase(Trigger):
         return await tracker.async_setup()
 
 
-class TurnOnTrigger(_TurnOnTriggerBase):
-    """LG webOS TV turn on trigger."""
-
-    @classmethod
-    @override
-    async def async_validate_config(
-        cls, hass: HomeAssistant, config: ConfigType
-    ) -> ConfigType:
-        """Validate config."""
-        return cast(ConfigType, _TRIGGER_SCHEMA(config))
-
-    def __init__(self, hass: HomeAssistant, config: TriggerConfig) -> None:
-        """Initialize trigger."""
-        super().__init__(hass, config)
-
-        if TYPE_CHECKING:
-            assert config.target is not None
-        self._target = config.target
-
-
-class LegacyTurnOnTrigger(_TurnOnTriggerBase):
+class LegacyTurnOnTrigger(Trigger):
     """Backwards compatible trigger for the legacy `webostv.turn_on` config.
 
     This trigger is deliberately absent from `triggers.yaml`, so the automation editor
     keeps treating it as unsupported rather than rendering a stored config that uses the
-    legacy options against a target selector.
+    legacy options against a target selector. It resolves the configured devices the way
+    it always has, so existing automations behave exactly as before.
     """
+
+    _options: dict[str, Any]
 
     @classmethod
     @override
@@ -234,4 +257,28 @@ class LegacyTurnOnTrigger(_TurnOnTriggerBase):
 
         if TYPE_CHECKING:
             assert config.options is not None
-        self._target = config.options
+        self._options = config.options
+
+    @override
+    async def async_attach_runner(
+        self,
+        run_action: TriggerActionRunner,
+        did_not_trigger: TriggerNotTriggeredReporter | None = None,
+    ) -> CALLBACK_TYPE:
+        """Attach a trigger."""
+        device_ids = set(self._options.get(ATTR_DEVICE_ID, []))
+        device_ids.update(
+            async_get_device_id_from_entity_id(self._hass, entity_id)
+            for entity_id in self._options.get(ATTR_ENTITY_ID, [])
+        )
+
+        unsubs = _async_attach_turn_on_actions(self._hass, device_ids, run_action)
+
+        @callback
+        def async_remove() -> None:
+            """Remove the attached actions."""
+            for unsub in unsubs:
+                unsub()
+            unsubs.clear()
+
+        return async_remove
