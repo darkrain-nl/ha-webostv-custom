@@ -10,6 +10,7 @@ from homeassistant.const import (
     ATTR_ENTITY_ID,
     CONF_DEVICE_ID,
     CONF_DOMAIN,
+    CONF_OPTIONS,
     CONF_PLATFORM,
     CONF_TARGET,
     CONF_TYPE,
@@ -40,7 +41,13 @@ PLATFORM_TYPE = f"{DOMAIN}.{__name__.rsplit('.', maxsplit=1)[-1]}"
 
 DEPRECATED_TARGET_ISSUE_ID = "deprecated_turn_on_trigger_target"
 
-_TRIGGER_SCHEMA = vol.Schema({vol.Required(CONF_TARGET): cv.TARGET_FIELDS})
+_TRIGGER_SCHEMA = vol.Schema(
+    {
+        vol.Required(CONF_TARGET): cv.TARGET_FIELDS,
+        # The trigger has no options, but the editor sends an empty options dict
+        vol.Required(CONF_OPTIONS, default={}): {},
+    }
+)
 
 # The legacy options were more lenient than the target fields they are folded into:
 # entity IDs could be given as a comma separated string and in any casing.
