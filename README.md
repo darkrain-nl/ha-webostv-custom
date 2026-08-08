@@ -25,7 +25,7 @@ A custom integration override for Home Assistant that adds native **Screen Power
    https://github.com/darkrain-nl/ha-webostv-custom
    ```
 4. Category: **Integration** -> Click **Add**.
-5. Find **LG webOS TV Custom Screen Control**, click **Download**, and select the latest release (`v1.0.14`).
+5. Find **LG webOS TV Custom Screen Control**, click **Download**, and select the latest release (`v1.0.15`).
 6. **Restart Home Assistant**.
 
 ---

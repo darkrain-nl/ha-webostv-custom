@@ -178,30 +178,38 @@ class TurnOnTrigger(Trigger):
     async def async_validate_complete_config(
         cls, hass: HomeAssistant, complete_config: ConfigType
     ) -> ConfigType:
-        """Validate complete config, folding the legacy top-level fields into the target.
+        """Validate complete config, folding the legacy fields into the target.
 
-        A config edited in the UI can carry both the legacy top-level fields and a
-        target. The target is what the user last selected, so the legacy fields are
-        only used when the target selects nothing at all.
+        The legacy fields sat at the top level, but the automation editor moves them
+        into the options when it saves a stored config, so both places are handled. The
+        target is what the user last selected, so the legacy fields are only used when
+        the target selects nothing at all.
         """
-        if legacy_keys := {ATTR_ENTITY_ID, ATTR_DEVICE_ID} & complete_config.keys():
-            ir.async_create_issue(
-                hass,
-                DOMAIN,
-                DEPRECATED_TARGET_ISSUE_ID,
-                breaks_in_ha_version="2027.3",
-                is_fixable=True,
-                severity=ir.IssueSeverity.WARNING,
-                translation_key=DEPRECATED_TARGET_ISSUE_ID,
-            )
-            complete_config = complete_config.copy()
-            target = dict(complete_config.get(CONF_TARGET) or {})
-            legacy_target = _LEGACY_OPTIONS_SCHEMA(
-                {key: complete_config.pop(key) for key in legacy_keys}
-            )
-            if not TargetSelection(target).has_any_target:
-                target.update(legacy_target)
-            complete_config[CONF_TARGET] = target
+        complete_config = complete_config.copy()
+        options = dict(complete_config.get(CONF_OPTIONS) or {})
+        legacy_values: dict[str, Any] = {}
+        for key in (ATTR_ENTITY_ID, ATTR_DEVICE_ID):
+            for source in (complete_config, options):
+                if key in source:
+                    legacy_values.setdefault(key, source.pop(key))
+
+        if not legacy_values:
+            return await super().async_validate_complete_config(hass, complete_config)
+
+        ir.async_create_issue(
+            hass,
+            DOMAIN,
+            DEPRECATED_TARGET_ISSUE_ID,
+            breaks_in_ha_version="2027.3",
+            is_fixable=True,
+            severity=ir.IssueSeverity.WARNING,
+            translation_key=DEPRECATED_TARGET_ISSUE_ID,
+        )
+        target = dict(complete_config.get(CONF_TARGET) or {})
+        if not TargetSelection(target).has_any_target:
+            target.update(_LEGACY_OPTIONS_SCHEMA(legacy_values))
+        complete_config[CONF_TARGET] = target
+        complete_config[CONF_OPTIONS] = options
         return await super().async_validate_complete_config(hass, complete_config)
 
     @classmethod
