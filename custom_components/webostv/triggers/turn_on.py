@@ -14,6 +14,7 @@ from homeassistant.const import (
     CONF_PLATFORM,
     CONF_TARGET,
     CONF_TYPE,
+    Platform,
 )
 from homeassistant.core import CALLBACK_TYPE, Context, HomeAssistant, callback
 from homeassistant.exceptions import HomeAssistantError
@@ -39,8 +40,8 @@ from ..helpers import (
     async_get_device_id_from_entity_id,
 )
 
-# Platform type should be <DOMAIN>.<SUBMODULE_NAME>
-PLATFORM_TYPE = f"{DOMAIN}.{__name__.rsplit('.', maxsplit=1)[-1]}"
+# Stored in device automations as the trigger type, so it must stay stable
+PLATFORM_TYPE = f"{DOMAIN}.turn_on"
 
 _TRIGGER_SCHEMA = vol.Schema(
     {
@@ -90,14 +91,17 @@ def _async_attach_turn_on_actions(
 ) -> list[CALLBACK_TYPE]:
     """Attach the turn on action for each of the given devices."""
 
-    @callback
-    def run_turn_on_action(
+    async def run_turn_on_action(
         description: str,
         variables: dict[str, Any],
         context: Context | None = None,
     ) -> None:
-        """Run the trigger action."""
-        run_action(variables, description, context)
+        """Run the trigger action.
+
+        This is a coroutine function rather than a callback, so that the turn on
+        service waits for the triggered action to finish.
+        """
+        await run_action(variables, description, context)
 
     return [
         PluggableAction.async_attach_trigger(
@@ -122,12 +126,14 @@ class _TurnOnTargetTracker(TargetEntityChangeTracker):
         """Initialize the tracker."""
 
         def entity_filter(entities: set[str]) -> set[str]:
+            # Matches the entity filter of the target selector in triggers.yaml
             ent_reg = er.async_get(hass)
             return {
                 entity_id
                 for entity_id in entities
                 if (entry := ent_reg.async_get(entity_id)) is not None
                 and entry.platform == DOMAIN
+                and entry.domain == Platform.MEDIA_PLAYER
                 and entry.device_id is not None
             }
 
