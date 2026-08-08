@@ -1,7 +1,13 @@
 turn_on:
-  target:
-    entity:
-      - domain: media_player
-        integration: webostv
-    device:
-      - integration: webostv
+  fields:
+    entity_id:
+      selector:
+        entity:
+          integration: webostv
+          domain: media_player
+          multiple: true
+    device_id:
+      selector:
+        device:
+          integration: webostv
+          multiple: true

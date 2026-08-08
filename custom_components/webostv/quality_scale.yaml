@@ -57,7 +57,9 @@ rules:
   exception-translations: done
   icon-translations: done
   reconfiguration-flow: done
-  repair-issues: done
+  repair-issues:
+    status: exempt
+    comment: The integration does not have anything to repair.
   stale-devices:
     status: exempt
     comment: The integration connects to a single device.

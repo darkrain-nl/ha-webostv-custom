@@ -71,6 +71,9 @@
     "device_unavailable": {
       "message": "Device {device} is unavailable"
     },
+    "invalid_entity_id": {
+      "message": "Entity {entity_id} is not a valid webOS TV entity."
+    },
     "notify_communication_error": {
       "message": "Communication error while sending notification to device {name}: {error}"
     },
@@ -83,24 +86,8 @@
     "source_not_found": {
       "message": "Source {source} not found in the sources list for {name}."
     },
-    "trigger_without_target": {
-      "message": "The LG webOS TV turn on trigger requires a target."
-    },
     "unhandled_trigger_type": {
       "message": "Unhandled trigger type: {trigger_type}"
-    }
-  },
-  "issues": {
-    "deprecated_turn_on_trigger_target": {
-      "fix_flow": {
-        "step": {
-          "confirm": {
-            "description": "An automation or template entity uses the LG webOS TV turn on trigger with the `entity_id` or `device_id` option. Those options have been replaced by a target. They still work for now, but support for them will be removed in a future release.\n\nOpen each affected automation in the editor, select your TV as the target of the trigger, and save it again. Alternatively, edit your configuration files (for example `automations.yaml`) directly and move the `entity_id` or `device_id` option into a `target` block.\n\nIf this issue reappears after a restart, the old option is still present. Edit your configuration files directly and remove the `entity_id` or `device_id` option from the trigger.\n\nWhen this is done, select **Submit**.",
-            "title": "Deprecated LG webOS TV turn on trigger configuration"
-          }
-        }
-      },
-      "title": "Deprecated LG webOS TV turn on trigger configuration"
     }
   },
   "options": {
@@ -172,6 +159,16 @@
   "triggers": {
     "turn_on": {
       "description": "Triggers when one or more LG webOS TVs are requested to turn on.",
+      "fields": {
+        "device_id": {
+          "description": "The LG webOS TVs to trigger on, selected by device.",
+          "name": "Device"
+        },
+        "entity_id": {
+          "description": "The LG webOS TVs to trigger on, selected by entity.",
+          "name": "Entity"
+        }
+      },
       "name": "TV is requested to turn on"
     }
   }

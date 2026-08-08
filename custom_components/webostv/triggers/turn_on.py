@@ -12,18 +12,11 @@ from homeassistant.const import (
     CONF_DOMAIN,
     CONF_OPTIONS,
     CONF_PLATFORM,
-    CONF_TARGET,
     CONF_TYPE,
 )
 from homeassistant.core import CALLBACK_TYPE, Context, HomeAssistant, callback
-from homeassistant.exceptions import HomeAssistantError
-from homeassistant.helpers import (
-    config_validation as cv,
-    device_registry as dr,
-    entity_registry as er,
-    issue_registry as ir,
-)
-from homeassistant.helpers.target import TargetEntityChangeTracker, TargetSelection
+from homeassistant.helpers import config_validation as cv
+from homeassistant.helpers.automation import move_top_level_schema_fields_to_options
 from homeassistant.helpers.trigger import (
     PluggableAction,
     Trigger,
@@ -34,27 +27,25 @@ from homeassistant.helpers.trigger import (
 from homeassistant.helpers.typing import ConfigType
 
 from ..const import DOMAIN
-from ..helpers import async_get_device_entry_by_device_id
+from ..helpers import (
+    async_get_device_entry_by_device_id,
+    async_get_device_id_from_entity_id,
+)
 
 # Platform type should be <DOMAIN>.<SUBMODULE_NAME>
 PLATFORM_TYPE = f"{DOMAIN}.{__name__.rsplit('.', maxsplit=1)[-1]}"
 
-DEPRECATED_TARGET_ISSUE_ID = "deprecated_turn_on_trigger_target"
+_OPTIONS_SCHEMA_DICT: dict[vol.Marker, Any] = {
+    vol.Optional(ATTR_DEVICE_ID): vol.All(cv.ensure_list, [cv.string]),
+    vol.Optional(ATTR_ENTITY_ID): cv.entity_ids,
+}
 
 _TRIGGER_SCHEMA = vol.Schema(
     {
-        vol.Required(CONF_TARGET): cv.TARGET_FIELDS,
-        # The trigger has no options, but the editor sends an empty options dict
-        vol.Required(CONF_OPTIONS, default={}): {},
-    }
-)
-
-# The legacy options were more lenient than the target fields they are folded into:
-# entity IDs could be given as a comma separated string and in any casing.
-_LEGACY_OPTIONS_SCHEMA = vol.Schema(
-    {
-        vol.Optional(ATTR_DEVICE_ID): vol.All(cv.ensure_list, [cv.string]),
-        vol.Optional(ATTR_ENTITY_ID): cv.entity_ids,
+        vol.Required(CONF_OPTIONS): vol.All(
+            _OPTIONS_SCHEMA_DICT,
+            cv.has_at_least_one_key(ATTR_ENTITY_ID, ATTR_DEVICE_ID),
+        )
     }
 )
 
@@ -77,139 +68,20 @@ def async_get_turn_on_description(hass: HomeAssistant, device_id: str) -> str:
     return f"webostv turn on trigger for {device.name_by_user or device.name}"
 
 
-class _TurnOnTargetTracker(TargetEntityChangeTracker):
-    """Attach turn on actions to the webOS TV devices selected by a target."""
-
-    def __init__(
-        self,
-        hass: HomeAssistant,
-        target_selection: TargetSelection,
-        run_action: TriggerActionRunner,
-    ) -> None:
-        """Initialize the tracker."""
-
-        def entity_filter(entities: set[str]) -> set[str]:
-            ent_reg = er.async_get(hass)
-            return {
-                entity_id
-                for entity_id in entities
-                if (entry := ent_reg.async_get(entity_id)) is not None
-                and entry.platform == DOMAIN
-                and entry.device_id is not None
-            }
-
-        super().__init__(hass, target_selection, entity_filter)
-        self._selection = target_selection
-        self._run_action = run_action
-        self._device_ids: set[str] = set()
-        self._unsubs: list[CALLBACK_TYPE] = []
-
-    @callback
-    @override
-    def _handle_entities_update(self, tracked_entities: set[str]) -> None:
-        """Re-attach the turn on actions when the tracked devices change."""
-        ent_reg = er.async_get(self._hass)
-        dev_reg = dr.async_get(self._hass)
-        # Directly targeted devices are used as-is, because resolving them through their
-        # entities would drop a device whose webOS TV entity is hidden. A device that no
-        # longer exists is skipped, like an entity that is not a webOS TV entity.
-        device_ids: set[str] = set()
-        for device_id in self._selection.device_ids:
-            if device_id in dev_reg.devices:
-                device_ids.add(device_id)
-            # A pre-migration composite id is not a device; it resolves to its splits
-            elif splits := dev_reg.async_get_devices_for_composite_device_id(device_id):
-                device_ids.update(device.id for device in splits)
-        device_ids.update(
-            entity_device_id
-            for entity_id in tracked_entities
-            if (entry := ent_reg.async_get(entity_id))
-            and (entity_device_id := entry.device_id)
-        )
-        if device_ids == self._device_ids:
-            return
-
-        self._detach_actions()
-        self._device_ids = device_ids
-
-        for device_id in device_ids:
-            self._unsubs.append(
-                PluggableAction.async_attach_trigger(
-                    self._hass,
-                    async_get_turn_on_trigger(device_id),
-                    partial(
-                        self._run_turn_on_action,
-                        async_get_turn_on_description(self._hass, device_id),
-                    ),
-                    {ATTR_DEVICE_ID: device_id},
-                )
-            )
-
-    @callback
-    def _run_turn_on_action(
-        self,
-        description: str,
-        variables: dict[str, Any],
-        context: Context | None = None,
-    ) -> None:
-        """Run the trigger action."""
-        self._run_action(variables, description, context)
-
-    @callback
-    def _detach_actions(self) -> None:
-        """Detach the currently attached turn on actions."""
-        for unsub in self._unsubs:
-            unsub()
-        self._unsubs.clear()
-
-    @override
-    def _unsubscribe(self) -> None:
-        """Unsubscribe from all events."""
-        super()._unsubscribe()
-        self._detach_actions()
-        self._device_ids = set()
-
-
 class TurnOnTrigger(Trigger):
     """LG webOS TV turn on trigger."""
+
+    _options: dict[str, Any]
 
     @classmethod
     @override
     async def async_validate_complete_config(
         cls, hass: HomeAssistant, complete_config: ConfigType
     ) -> ConfigType:
-        """Validate complete config, folding the legacy fields into the target.
-
-        The legacy fields sat at the top level, but the automation editor moves them
-        into the options when it saves a stored config, so both places are handled. The
-        target is what the user last selected, so the legacy fields are only used when
-        the target selects nothing at all.
-        """
-        complete_config = complete_config.copy()
-        options = dict(complete_config.get(CONF_OPTIONS) or {})
-        legacy_values: dict[str, Any] = {}
-        for key in (ATTR_ENTITY_ID, ATTR_DEVICE_ID):
-            for source in (complete_config, options):
-                if key in source:
-                    legacy_values.setdefault(key, source.pop(key))
-
-        if not legacy_values:
-            return await super().async_validate_complete_config(hass, complete_config)
-
-        ir.async_create_issue(
-            hass,
-            DOMAIN,
-            DEPRECATED_TARGET_ISSUE_ID,
-            breaks_in_ha_version="2027.3",
-            is_fixable=True,
-            severity=ir.IssueSeverity.WARNING,
-            translation_key=DEPRECATED_TARGET_ISSUE_ID,
+        """Validate complete config, moving the legacy top-level fields to options."""
+        complete_config = move_top_level_schema_fields_to_options(
+            complete_config, _OPTIONS_SCHEMA_DICT
         )
-        target = dict(complete_config.get(CONF_TARGET) or {})
-        if not TargetSelection(target).has_any_target:
-            target.update(_LEGACY_OPTIONS_SCHEMA(legacy_values))
-        complete_config[CONF_TARGET] = target
-        complete_config[CONF_OPTIONS] = options
         return await super().async_validate_complete_config(hass, complete_config)
 
     @classmethod
@@ -225,8 +97,8 @@ class TurnOnTrigger(Trigger):
         super().__init__(hass, config)
 
         if TYPE_CHECKING:
-            assert config.target is not None
-        self._target = config.target
+            assert config.options is not None
+        self._options = config.options
 
     @override
     async def async_attach_runner(
@@ -235,11 +107,39 @@ class TurnOnTrigger(Trigger):
         did_not_trigger: TriggerNotTriggeredReporter | None = None,
     ) -> CALLBACK_TYPE:
         """Attach a trigger."""
-        target_selection = TargetSelection(self._target)
-        if not target_selection.has_any_target:
-            raise HomeAssistantError(
-                translation_domain=DOMAIN, translation_key="trigger_without_target"
-            )
+        device_ids = set(self._options.get(ATTR_DEVICE_ID, []))
+        device_ids.update(
+            async_get_device_id_from_entity_id(self._hass, entity_id)
+            for entity_id in self._options.get(ATTR_ENTITY_ID, [])
+        )
 
-        tracker = _TurnOnTargetTracker(self._hass, target_selection, run_action)
-        return await tracker.async_setup()
+        @callback
+        def run_turn_on_action(
+            description: str,
+            variables: dict[str, Any],
+            context: Context | None = None,
+        ) -> None:
+            """Run the trigger action."""
+            run_action(variables, description, context)
+
+        unsubs = [
+            PluggableAction.async_attach_trigger(
+                self._hass,
+                async_get_turn_on_trigger(device_id),
+                partial(
+                    run_turn_on_action,
+                    async_get_turn_on_description(self._hass, device_id),
+                ),
+                {ATTR_DEVICE_ID: device_id},
+            )
+            for device_id in device_ids
+        ]
+
+        @callback
+        def async_remove() -> None:
+            """Remove the attached actions."""
+            for unsub in unsubs:
+                unsub()
+            unsubs.clear()
+
+        return async_remove
