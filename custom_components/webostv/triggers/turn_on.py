@@ -35,7 +35,13 @@ from ..helpers import async_get_device_entry_by_device_id
 # Platform type should be <DOMAIN>.<SUBMODULE_NAME>
 PLATFORM_TYPE = f"{DOMAIN}.{__name__.rsplit('.', maxsplit=1)[-1]}"
 
-_TRIGGER_SCHEMA = vol.Schema({vol.Required(CONF_TARGET): cv.TARGET_FIELDS})
+_TRIGGER_SCHEMA = vol.Schema(
+    {
+        vol.Required(CONF_TARGET): cv.TARGET_FIELDS,
+        # The trigger has no options, but the editor sends an empty options dict
+        vol.Required(CONF_OPTIONS, default={}): {},
+    }
+)
 
 # The legacy trigger selected devices with top-level entity_id and device_id options,
 # which happen to be target fields, so they are reused as the target as-is.
